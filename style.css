@@ -1,0 +1,31 @@
+.special {
+    color : ff0088;
+}
+
+.left {
+    float: left;
+}
+
+.left div {
+    padding: 5px;
+    border: 1px solid black;
+}
+
+.red {
+    color: #000000;
+    background-color: #ff0000;
+}
+
+.green {
+    color: #000000;
+    background-color: #00ff00;
+}
+
+.blue {
+    color: #ffff00;
+    background-color: #0000ff;
+}
+
+div.logging tr:nth-child(odd) {
+    background-color: #dddddd;
+}
