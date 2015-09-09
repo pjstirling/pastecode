@@ -125,15 +125,15 @@
 			      :columns (("Paste" 2 ("/paste/item/?id=~a" 0) pe.description)
 					("Language" 1 nil l.name)
 					("Created" (fancy-datestring 3) nil pe.created-at)
-					("Delete" ((lambda (id)
-						     (when (local-network-request-p)
-						       (<:form :method "POST"
-							 :action "/paste/delete/"
-							 :enctype "multipart/form-data"
-							 (<:input :type "hidden" :name "id" :value id)
-							 (<:input :type "submit" :value "Delete")))
-						     nil)
-						   0))))))
+					("" ((lambda (id)
+					       (when (local-network-request-p)
+						 (<:form :method "POST"
+						   :action "/paste/delete/"
+						   :enctype "multipart/form-data"
+						   (<:input :type "hidden" :name "id" :value id)
+						   (<:input :type "submit" :value "Delete")))
+					       nil)
+					     0))))))
   (with-paste-db
     (page-template "Paste List"
       (widget db))))
