@@ -365,7 +365,7 @@
 				     munged))))))))
 	    (values printed
 		    (delimited-list (char munged 0) nil)
-		    munged))))))))
+		    munged)))))))
 
 (defun form-for-path (root path)
   (if path
