@@ -91,7 +91,9 @@
 		pair)
 	   (handler-sym (symbol-name handler-sym)))
       (setf +common-lisp-language+
-	    (select-or-insert db languages name handler-sym)))))
+	    (select-or-insert db languages name handler-sym))))
+  #+swank
+  (swank:eval-in-emacs `(load-file ,(namestring (asdf:system-relative-pathname "pastecode" "pastecode.el")))))
 
 (defmacro page-template (title &body body)
   `(pjs-yaclml:with-yaclml-output-to-string
@@ -153,12 +155,10 @@
 	(insert-common-lisp-paste-packages db key (string (read-from-string package)))))))
 
 (defun expand-path (form path)
-  ;(log-message 'debug "walking ~%~w~%path ~w~%" form path)
   (let ((i (pop path))
 	(j 0))
     (if (null i)
 	(let ((expanded (macroexpand-1 form)))
-	  ;(log-message 'debug "expanding ~w~% ->~%~w~%" form expanded)
 	  (if path
 	      (expand-path expanded path)
 	      ;; else
@@ -315,17 +315,9 @@
 	      ;; might be printed as CL:NIL or even COMMON-LISP:NIL, or more variations
 	      (nil-as-string (with-output-to-string (*standard-output*)
 			       (write nil))))
-					;(format t "munged: ~w~%printed ~w~%" munged printed)
 	  (labels ((whitespacep (ch)
 		     (member ch '(#\Space #\Tab #\Newline #\Return) :test #'char=))
 		   (delimited-list (delimiter path)
-		     ;; print sometimes injects leading whitespace
-		     #+nil
-		     (while (whitespacep (char printed i))
-		       (incf i))
-		     #+nil
-		     (while (whitespacep (char munged j))
-		       (incf j))
 		     (let ((start i)
 			   (subform-counter 0))
 		       (with-collector* (subform)
@@ -373,7 +365,7 @@
 				     munged))))))))
 	    (values printed
 		    (delimited-list (char munged 0) nil)
-		    munged)))))))
+		    munged))))))))
 
 (defun form-for-path (root path)
   (if path
@@ -389,51 +381,6 @@
       ;; else
       root))
 
-(defparameter +test-form+
-  '(web-entry dash "/"
-    ((widget :parameter-type (sql-table
-			      :query (:select
-				       (p.id l.name pe.description pe.created-at)
-				       (:from
-					(:left-join
-					 (:as p pastes)
-					 (:as pe
-					      (:select
-						(paste-entries.id
-						 paste-id
-						 description
-						 (:as created-at
-						      (min created-at)))
-						(:from paste-entries)
-						(:group-by paste-id)))
-					 (= p.id pe.id)
-					 (:as l languages)
-					 (= p.language-id l.id))))
-			      :columns (("Paste" 2 ("/paste/item/?id=~a" 0) pe.description)
-					("Language" 1 nil l.name)
-					("Created" (fancy-datestring 3) nil pe.created-at)))))
-    (with-paste-db
-      (page-template "Paste List"
-	(widget db)))))
-
-(defun test-pretty-printed-form-positions ()
-  (bind ((*print-right-margin* 100)
-	 (form +test-form+)
-	 (:mv (str sub-forms)
-	      (pretty-printed-form-positions form)))
-    (labels ((rec (sub-form)
-	       (format t "path ~w~%" (sublist-info-path sub-form))
-	       (format t "start ~a~%" (sublist-info-start sub-form))
-	       (format t "string ~w~%"
-		       (subseq str
-			       (sublist-info-start sub-form)
-			       (sublist-info-end sub-form)))
-	       (format t "form ~a~%" (form-for-path form
-						    (sublist-info-path sub-form)))
-	       (dolist (sub (sublist-info-content sub-form))
-		 (rec sub))))
-      (rec sub-forms))))
-
 (defclass expansion-metadata ()
   ((package :initarg :package
 	    :reader expansion-metadata-package)
@@ -448,42 +395,37 @@
 
 (defun potential-macro-positions (form sub-forms)
   (with-collector (collect)
-    (labels ((rec (sub-form)
-	       (bind ((path (sublist-info-path sub-form))
-		      (el (form-for-path form path))
-		      (first (first el)))
-		 (when (and (symbolp first)
-			    (not (member first '(quote
-						 function
-						 #+sbcl
-						 sb-int::quasiquote)))
-			    (or (special-operator-p first)
-				(macro-function first)))
-		   (collect (list first
-				  (1+ (sublist-info-start sub-form))
-				  (length (prin1-to-string first))
-				  path)))
-		 (map 'nil #'rec (sublist-info-content sub-form)))))
-      (rec sub-forms))))
+    (let ((cl (find-package "COMMON-LISP")))
+      (labels ((external-cl-sym-p (sym)
+		 (multiple-value-bind (sym2 state)
+		     (find-symbol (symbol-name sym) cl)
+		   (and (eq sym sym2)
+			(eq :external state))))
+	       (rec (sub-form)
+		 (bind ((path (sublist-info-path sub-form))
+			(el (form-for-path form path))
+			(first (first el)))
+		   (when (and (symbolp first)
+			      (not (member first '(quote
+						   function
+						   nil
+						   #+sbcl
+						   sb-int::quasiquote)))
+			      (or (special-operator-p first)
+				  (macro-function first)
+				  (external-cl-sym-p first)))
+		     (collect (list (1+ (sublist-info-start sub-form))
+				    (length (prin1-to-string first))
+				    path
+				    (if (or (special-operator-p first)
+					    (external-cl-sym-p first))
+					'special
+					;; else
+					'macro))))
+		   (map 'nil #'rec (sublist-info-content sub-form)))))
+	(rec sub-forms)))))
 
-(defun test-potential-macro-positions ()
-  (bind ((form +test-form+)
-	 (:mv (str sub-forms)
-	      (pretty-printed-form-positions form))
-	 (positions (potential-macro-positions form sub-forms))
-	 (end 0))
-    (dolist (pos positions)
-      (bind ((:db (sym start length path)
-		  pos)
-	     (next-end (+ start length)))
-	(format t "sym ~w~%" sym)
-	(format t "start ~a length ~a~%" start length)
-	(format t "substr ~w~%" (subseq str start (+ start length)))
-	(format t "subform ~w~%" (form-for-path form path))
-	(format t "prefix ~w~%" (subseq str end start))
-	(setf end next-end)))))
-
-(defun render-expansion-page (id entry parent expansion)
+(defun render-expansion-page (id entry parent expansion debug)
   (bind ((form (expanded-entry-form expansion))
 	 (:mv (str sub-forms munged)
 	      (pretty-printed-form-positions form))
@@ -496,14 +438,14 @@
 	    "Undo")))
       (<:pre
 	(dolist (pos positions)
-	  (bind ((:db (sym start length path)
+	  (bind ((:db (start length path kind)
 		      pos)
 		 (next-end (+ start length))
 		 (text (subseq str
 			       start
 			       next-end)))
 	    (<:as-html (subseq str end start))
-	    (if (special-operator-p sym)
+	    (if (eq kind 'special)
 		(<:span :class "special"
 		  (<:as-html text))
 		;; else
@@ -511,44 +453,44 @@
 		  (<:as-html text)))
 	    (setf end next-end)))
 	(<:as-html (subseq str end)))
-      (<:div :class "left"
-	(labels ((colour (depth)
-		   (case (mod depth 3)
-		     (0
-		      "red")
-		     (1
-		      "green")
-		     (2
-		      "blue")))
-		 (rec (sub-form depth)
-		   (<:div :class (colour depth)
-		     (<:pre (<:as-html (subseq str
-					       (sublist-info-start sub-form)
-					       (sublist-info-end sub-form))))
-		     (let ((form (form-for-path form (sublist-info-path sub-form))))
-		       (when (and form
-				  (listp form))
-			 
-			 
-			 (<:p (when (symbolp (first form))
-				(<:as-html (prin1-to-string (first form))
-					   " "
-					   (or (special-operator-p (first form))
-					       (and (macro-function (first form))
-						    t))))
-			   " "
-			   (<:as-html (type-of (first form))))))
-		     (map nil (lambda (s)
-				(rec s (1+ depth)))
-		       (sublist-info-content sub-form)))))
-	  (rec sub-forms 0)))
-      (<:div :class "right"
-	(<:p (<:as-html munged))))))
+      (when debug
+	(<:div :class "left"
+	  (labels ((colour (depth)
+		     (case (mod depth 3)
+		       (0
+			"red")
+		       (1
+			"green")
+		       (2
+			"blue")))
+		   (rec (sub-form depth)
+		     (<:div :class (colour depth)
+		       (<:pre (<:as-html (subseq str
+						 (sublist-info-start sub-form)
+						 (sublist-info-end sub-form))))
+		       (let ((form (form-for-path form (sublist-info-path sub-form))))
+			 (when (and form
+				    (listp form))
+			   (<:p (when (symbolp (first form))
+				  (<:as-html (prin1-to-string (first form))
+					     " "
+					     (or (special-operator-p (first form))
+						 (and (macro-function (first form))
+						      t))))
+			     " "
+			     (<:as-html (type-of (first form))))))
+		       (map nil (lambda (s)
+				  (rec s (1+ depth)))
+			 (sublist-info-content sub-form)))))
+	    (rec sub-forms 0)))
+	(<:div :class "right"
+	  (<:p (<:as-html munged)))))))
 
 (web-entry expand-entry "/expand/"
     ((id :parameter-type 'integer)
      (entry :parameter-type 'integer)
-     (parent :parameter-type 'integer))
+     (parent :parameter-type 'integer)
+     debug)
   (hunchentoot:start-session)
   (with-paste-db
     (bind ((session-hash (or (hunchentoot:session-value 'pastes)
@@ -577,7 +519,7 @@
 		1))
 	(setf parent 0))
       (aif (gethash parent entry-hash)
-	   (render-expansion-page id entry parent it)
+	   (render-expansion-page id entry parent it debug)
 	   ;; else
 	   (hunchentoot:redirect (url-with-params "/paste/expand/" id entry))))))
 
