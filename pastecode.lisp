@@ -31,8 +31,8 @@
   (package :t))
 
 (defvar +minute+ 60)
-(defvar +hour+ (* +minute+ 60))
-(defvar +day+ (* +hour+ 24))
+(defvar +hour+   (* +minute+ 60))
+(defvar +day+    (* +hour+ 24))
 
 (defun get-midnight (now)
   (bind ((:mv (second- minute- hour- date month year day- daylight-p- zone)
