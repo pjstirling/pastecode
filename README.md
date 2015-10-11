@@ -18,11 +18,12 @@ git clone https://github.com/pjstirling/pjs-logging.git
 git clone https://github.com/pjstirling/pjs-sqlite.git
 git clone https://github.com/pjstirling/pjs-chtml-helpers.git
 
-# Disabled for "security" by default, but if your lisp is running hostile code then it can 'rm -rf ~/',
-# anything it can do to emacs seems a bit trivial in comparison...
-# Without this enabled pastecode can't automatically load the small emacs module (in pastecode.el) when
-# pastecode is loaded into your lisp, and you will have to do it manually (or arrange for the file to
-# be loaded from your '.emacs'
+# Disabled for "security" by default, but if your lisp is running hostile code then
+# it can 'rm -rf ~/', anything it can do to emacs seems a bit trivial in
+# comparison...
+# Without this enabled pastecode can't automatically load the small emacs module (in
+# pastecode.el) when pastecode is loaded into your lisp, and you will have to do it
+# manually (or arrange for the file to be loaded from your '.emacs'
 echo "(setq slime-enable-evaluate-in-emacs t)" >> ~/.emacs
 
 sbcl --eval "(asdf:load-system '#:pjs-yaclml-generator)" \
